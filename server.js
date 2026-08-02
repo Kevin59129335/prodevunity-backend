@@ -48,6 +48,74 @@ const stripe = Stripe(STRIPE_SECRET_KEY);
 const app = express();
 app.use(cors({ origin: FRONTEND_URL === "*" ? true : FRONTEND_URL }));
 
+/* ---------- invio email reale (verifica account) ---------- */
+const nodemailer = require("nodemailer");
+const EMAIL_USER = process.env.EMAIL_USER;
+const EMAIL_APP_PASSWORD = process.env.EMAIL_APP_PASSWORD;
+const EMAIL_FROM = process.env.EMAIL_FROM || EMAIL_USER;
+
+let mailTransport = null;
+if (EMAIL_USER && EMAIL_APP_PASSWORD) {
+  mailTransport = nodemailer.createTransport({
+    service: "gmail",
+    auth: { user: EMAIL_USER, pass: EMAIL_APP_PASSWORD },
+  });
+} else {
+  console.warn("EMAIL_USER / EMAIL_APP_PASSWORD non configurati: l'invio email di conferma non funzionerà.");
+}
+
+const VERIFY_FILE = path.join(__dirname, "data", "verify_codes.json");
+if (!fs.existsSync(path.join(__dirname, "data"))) fs.mkdirSync(path.join(__dirname, "data"), { recursive: true });
+if (!fs.existsSync(VERIFY_FILE)) fs.writeFileSync(VERIFY_FILE, "{}");
+const getVerifyCodes = () => JSON.parse(fs.readFileSync(VERIFY_FILE, "utf8"));
+const saveVerifyCodes = (v) => fs.writeFileSync(VERIFY_FILE, JSON.stringify(v, null, 2));
+const genSixDigitCode = () => String(Math.floor(100000 + Math.random() * 900000));
+
+app.post("/api/verify/send", express.json(), async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email || !email.includes("@")) return res.status(400).json({ error: "email non valida" });
+    if (!mailTransport) return res.status(500).json({ error: "Invio email non configurato sul server (mancano EMAIL_USER / EMAIL_APP_PASSWORD)." });
+
+    const code = genSixDigitCode();
+    const codes = getVerifyCodes();
+    codes[email.toLowerCase()] = { code, expiresAt: Date.now() + 15 * 60 * 1000 };
+    saveVerifyCodes(codes);
+
+    await mailTransport.sendMail({
+      from: `"ProDevUnity" <${EMAIL_FROM}>`,
+      to: email,
+      subject: "Il tuo codice di conferma ProDevUnity",
+      text: `Il tuo codice di conferma è: ${code}\n\nScade tra 15 minuti. Se non hai richiesto tu la registrazione, ignora questa email.`,
+      html: `<p>Il tuo codice di conferma è:</p><p style="font-size:24px;font-weight:700;letter-spacing:4px;">${code}</p><p>Scade tra 15 minuti. Se non hai richiesto tu la registrazione, ignora questa email.</p>`,
+    });
+
+    res.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/verify/check", express.json(), (req, res) => {
+  try {
+    const { email, code } = req.body;
+    if (!email || !code) return res.status(400).json({ error: "parametri mancanti" });
+    const codes = getVerifyCodes();
+    const entry = codes[email.toLowerCase()];
+    if (!entry) return res.status(400).json({ ok: false, error: "Nessun codice richiesto per questa email." });
+    if (Date.now() > entry.expiresAt) return res.status(400).json({ ok: false, error: "Codice scaduto, richiedine uno nuovo." });
+    if (entry.code !== String(code).trim()) return res.status(400).json({ ok: false, error: "Codice errato." });
+
+    delete codes[email.toLowerCase()];
+    saveVerifyCodes(codes);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 /* ---------- storage su file (demo — sostituire con un vero DB in produzione) ---------- */
 const DATA_DIR = path.join(__dirname, "data");
 const USERS_FILE = path.join(DATA_DIR, "users.json");

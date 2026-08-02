@@ -37,7 +37,7 @@ const PORT = process.env.PORT || 4242;
 const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY;
 const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET;
 const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:5500";
-const FEE_PERCENT = Number(process.env.FEE_PERCENT || 10);
+const FEE_PERCENT = Number(process.env.FEE_PERCENT || 15);
 
 if (!STRIPE_SECRET_KEY) {
   console.error("ERRORE: manca STRIPE_SECRET_KEY nel file .env — vedi .env.example");
@@ -64,6 +64,30 @@ if (EMAIL_USER && EMAIL_APP_PASSWORD) {
   console.warn("EMAIL_USER / EMAIL_APP_PASSWORD non configurati: l'invio email di conferma non funzionerà.");
 }
 
+/* ---------- invio SMS reale (verifica account, via Twilio) ---------- */
+const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID;
+const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN;
+const TWILIO_PHONE_NUMBER = process.env.TWILIO_PHONE_NUMBER;
+const TWILIO_DEFAULT_COUNTRY_CODE = process.env.TWILIO_DEFAULT_COUNTRY_CODE || "+39";
+
+let twilioClient = null;
+if (TWILIO_ACCOUNT_SID && TWILIO_AUTH_TOKEN && TWILIO_PHONE_NUMBER) {
+  const Twilio = require("twilio");
+  twilioClient = Twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN);
+} else {
+  console.warn("TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN / TWILIO_PHONE_NUMBER non configurati: l'invio SMS di conferma non funzionerà.");
+}
+
+// Porta un numero italiano scritto come "3331234567" nel formato
+// internazionale richiesto da Twilio ("+393331234567"). Se l'utente ha
+// già scritto il prefisso (es. "+39..." o "0039..."), lo lascia com'è.
+const normalizePhone = (raw) => {
+  let n = raw.replace(/[\s()-]/g, "");
+  if (n.startsWith("00")) n = "+" + n.slice(2);
+  if (!n.startsWith("+")) n = TWILIO_DEFAULT_COUNTRY_CODE + n.replace(/^0+/, "");
+  return n;
+};
+
 const VERIFY_FILE = path.join(__dirname, "data", "verify_codes.json");
 if (!fs.existsSync(path.join(__dirname, "data"))) fs.mkdirSync(path.join(__dirname, "data"), { recursive: true });
 if (!fs.existsSync(VERIFY_FILE)) fs.writeFileSync(VERIFY_FILE, "{}");
@@ -71,24 +95,37 @@ const getVerifyCodes = () => JSON.parse(fs.readFileSync(VERIFY_FILE, "utf8"));
 const saveVerifyCodes = (v) => fs.writeFileSync(VERIFY_FILE, JSON.stringify(v, null, 2));
 const genSixDigitCode = () => String(Math.floor(100000 + Math.random() * 900000));
 
+// identifier può essere un'email ("mario@gmail.com") o un numero di
+// telefono ("3331234567"): lo capiamo dalla presenza della "@".
 app.post("/api/verify/send", express.json(), async (req, res) => {
   try {
-    const { email } = req.body;
-    if (!email || !email.includes("@")) return res.status(400).json({ error: "email non valida" });
-    if (!mailTransport) return res.status(500).json({ error: "Invio email non configurato sul server (mancano EMAIL_USER / EMAIL_APP_PASSWORD)." });
-
+    const { identifier } = req.body;
+    if (!identifier) return res.status(400).json({ error: "identifier mancante" });
+    const isEmail = identifier.includes("@");
     const code = genSixDigitCode();
-    const codes = getVerifyCodes();
-    codes[email.toLowerCase()] = { code, expiresAt: Date.now() + 15 * 60 * 1000 };
-    saveVerifyCodes(codes);
+    const key = isEmail ? identifier.toLowerCase() : normalizePhone(identifier);
 
-    await mailTransport.sendMail({
-      from: `"ProDevUnity" <${EMAIL_FROM}>`,
-      to: email,
-      subject: "Il tuo codice di conferma ProDevUnity",
-      text: `Il tuo codice di conferma è: ${code}\n\nScade tra 15 minuti. Se non hai richiesto tu la registrazione, ignora questa email.`,
-      html: `<p>Il tuo codice di conferma è:</p><p style="font-size:24px;font-weight:700;letter-spacing:4px;">${code}</p><p>Scade tra 15 minuti. Se non hai richiesto tu la registrazione, ignora questa email.</p>`,
-    });
+    if (isEmail) {
+      if (!mailTransport) return res.status(500).json({ error: "Invio email non configurato sul server (mancano EMAIL_USER / EMAIL_APP_PASSWORD)." });
+      await mailTransport.sendMail({
+        from: `"ProDevUnity" <${EMAIL_FROM}>`,
+        to: identifier,
+        subject: "Il tuo codice di conferma ProDevUnity",
+        text: `Il tuo codice di conferma è: ${code}\n\nScade tra 15 minuti. Se non hai richiesto tu la registrazione, ignora questa email.`,
+        html: `<p>Il tuo codice di conferma è:</p><p style="font-size:24px;font-weight:700;letter-spacing:4px;">${code}</p><p>Scade tra 15 minuti. Se non hai richiesto tu la registrazione, ignora questa email.</p>`,
+      });
+    } else {
+      if (!twilioClient) return res.status(500).json({ error: "Invio SMS non configurato sul server (mancano le variabili TWILIO_...)." });
+      await twilioClient.messages.create({
+        to: key,
+        from: TWILIO_PHONE_NUMBER,
+        body: `ProDevUnity: il tuo codice di conferma è ${code}. Scade tra 15 minuti.`,
+      });
+    }
+
+    const codes = getVerifyCodes();
+    codes[key] = { code, expiresAt: Date.now() + 15 * 60 * 1000 };
+    saveVerifyCodes(codes);
 
     res.json({ ok: true });
   } catch (err) {
@@ -99,15 +136,18 @@ app.post("/api/verify/send", express.json(), async (req, res) => {
 
 app.post("/api/verify/check", express.json(), (req, res) => {
   try {
-    const { email, code } = req.body;
-    if (!email || !code) return res.status(400).json({ error: "parametri mancanti" });
+    const { identifier, code } = req.body;
+    if (!identifier || !code) return res.status(400).json({ error: "parametri mancanti" });
+    const isEmail = identifier.includes("@");
+    const key = isEmail ? identifier.toLowerCase() : normalizePhone(identifier);
+
     const codes = getVerifyCodes();
-    const entry = codes[email.toLowerCase()];
-    if (!entry) return res.status(400).json({ ok: false, error: "Nessun codice richiesto per questa email." });
+    const entry = codes[key];
+    if (!entry) return res.status(400).json({ ok: false, error: "Nessun codice richiesto per questo indirizzo/numero." });
     if (Date.now() > entry.expiresAt) return res.status(400).json({ ok: false, error: "Codice scaduto, richiedine uno nuovo." });
     if (entry.code !== String(code).trim()) return res.status(400).json({ ok: false, error: "Codice errato." });
 
-    delete codes[email.toLowerCase()];
+    delete codes[key];
     saveVerifyCodes(codes);
     res.json({ ok: true });
   } catch (err) {

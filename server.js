@@ -85,6 +85,38 @@ function authenticateToken(req, res, next) {
 
 /* =========================== ENDPOINTS =========================== */
 
+/* Endpoint per creare la sessione di pagamento Stripe */
+app.post('/api/create-checkout-session', async (req, res) => {
+  try {
+    const { username, boostType, amount } = req.body;
+    
+    const session = await stripe.checkout.sessions.create({
+      payment_method_types: ['card'],
+      line_items: [
+        {
+          price_data: {
+            currency: 'eur',
+            product_data: {
+              name: `Boost Profilo (${username || 'User'})`,
+            },
+            unit_amount: amount ? amount * 100 : 500, // 5.00 EUR di default
+          },
+          quantity: 1,
+        },
+      ],
+      mode: 'payment',
+      metadata: { username, boostType },
+      success_url: `https://prodevunity.netlify.app/?status=success`,
+      cancel_url: `https://prodevunity.netlify.app/?status=cancel`,
+    });
+
+    res.json({ id: session.id, url: session.url });
+  } catch (err) {
+    console.error('Stripe Checkout Error:', err);
+    res.status(500).json({ error: 'Errore nella creazione del pagamento' });
+  }
+});
+
 app.post('/api/register', async (req, res) => {
   try {
     let { username, password, role } = req.body;

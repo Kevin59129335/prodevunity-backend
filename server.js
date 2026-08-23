@@ -52,7 +52,7 @@ const limiter = rateLimit({
 });
 app.use('/api/', limiter);
 
-/* MongoDB Atlas Driver Connection */
+/* MongoDB Connection */
 const mongoUri = process.env.MONGODB_URI;
 let db;
 
@@ -85,35 +85,46 @@ function authenticateToken(req, res, next) {
 
 /* =========================== ENDPOINTS =========================== */
 
-/* Endpoint per creare la sessione di pagamento Stripe */
+/* Endpoint Stripe Checkout */
 app.post('/api/create-checkout-session', async (req, res) => {
   try {
     const { username, boostType, amount } = req.body;
-    
+
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ['card'],
       line_items: [
         {
           price_data: {
-            currency: 'eur',
+            currency: 'usd',
             product_data: {
-              name: `Boost Profilo (${username || 'User'})`,
+              name: `Featured Account Boost (@${username || 'User'})`,
             },
-            unit_amount: amount ? amount * 100 : 500, // 5.00 EUR di default
+            unit_amount: amount ? Math.round(amount * 100) : 100, // 1.00 USD
           },
           quantity: 1,
         },
       ],
       mode: 'payment',
-      metadata: { username, boostType },
-      success_url: `https://prodevunity.netlify.app/?status=success`,
-      cancel_url: `https://prodevunity.netlify.app/?status=cancel`,
+      metadata: { username, boostType: boostType || 'account' },
+      success_url: `${process.env.FRONTEND_URL || 'https://prodevunity.netlify.app'}/?status=success`,
+      cancel_url: `${process.env.FRONTEND_URL || 'https://prodevunity.netlify.app'}/?status=cancel`,
     });
 
     res.json({ id: session.id, url: session.url });
   } catch (err) {
     console.error('Stripe Checkout Error:', err);
-    res.status(500).json({ error: 'Errore nella creazione del pagamento' });
+    res.status(500).json({ error: 'Errore nella creazione della sessione di pagamento Stripe' });
+  }
+});
+
+/* Endpoint Gruppi (risolve i 404 in console) */
+app.get('/api/groups', async (req, res) => {
+  try {
+    if (!db) return res.json([]);
+    const groups = await db.collection('groups').find().toArray();
+    res.json(groups);
+  } catch (err) {
+    res.status(500).json({ error: 'Error fetching groups' });
   }
 });
 
@@ -124,7 +135,7 @@ app.post('/api/register', async (req, res) => {
 
     role = role === 'client' ? 'client' : 'dev';
     const prefix = role === 'dev' ? 'dev_' : 'client_';
-    
+
     if (!username.startsWith('dev_') && !username.startsWith('client_')) {
       username = prefix + username;
     }

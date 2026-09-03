@@ -53,9 +53,9 @@ async function authenticateToken(req, res, next) {
 // ==========================================
 
 app.post('/api/auth/register', async (req, res) => {
-    const { username, email, password, role } = req.body;
+    const { username, password, role } = req.body;
     try {
-        if (!username || !password) return res.status(400).json({ error: 'Campi obbligatori mancanti.' });
+        if (!username || !password) return res.status(400).json({ error: 'Username e password obbligatori.' });
 
         const [existing] = await db.query('SELECT id FROM users WHERE username = ?', [username]);
         if (existing.length > 0) return res.status(400).json({ error: 'Username già registrato.' });
@@ -65,13 +65,15 @@ app.post('/api/auth/register', async (req, res) => {
         const customId = (userRole === 'client' ? 'client_' : 'dev_') + Math.random().toString(36).substring(2, 9);
         const nowMs = Date.now();
 
+        // QUERY FIXATA: Rimossa la colonna 'email' che non esiste nella tabella users di Railway
         await db.query(
-            'INSERT INTO users (username, email, password, role, user_custom_id, bio, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
-            [username, email || '', hashedPassword, userRole, customId, 'Sviluppatore su ProDevUnity', nowMs]
+            'INSERT INTO users (username, password, role, user_custom_id, bio, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+            [username, hashedPassword, userRole, customId, 'Sviluppatore su ProDevUnity', nowMs]
         );
 
         res.status(201).json({ ok: true, message: 'Registrazione completata.' });
     } catch (err) {
+        console.error("Errore registrazione DB:", err);
         res.status(500).json({ error: 'Errore DB: ' + err.message });
     }
 });
@@ -129,115 +131,7 @@ app.post('/api/auth/logout', (req, res) => {
 });
 
 // ==========================================
-// 2. FEED & POSTS (/api/posts)
-// ==========================================
-
-app.get('/api/posts', async (req, res) => {
-    try {
-        const [posts] = await db.query(
-            'SELECT p.*, u.username as author FROM posts p LEFT JOIN users u ON p.user_id = u.id ORDER BY p.created_at DESC'
-        );
-        res.json(posts);
-    } catch (err) {
-        res.status(500).json({ error: 'Errore nel recupero dei post: ' + err.message });
-    }
-});
-
-app.post('/api/posts', authenticateToken, async (req, res) => {
-    const { title, description, code } = req.body;
-    try {
-        const nowMs = Date.now();
-        await db.query(
-            'INSERT INTO posts (user_id, title, description, code, created_at) VALUES (?, ?, ?, ?, ?)',
-            [req.user.id, title, description, code || '', nowMs]
-        );
-        res.json({ ok: true });
-    } catch (err) {
-        res.status(500).json({ error: 'Impossibile pubblicare il post: ' + err.message });
-    }
-});
-
-// ==========================================
-// 3. CANALI & CHAT MULTIPLA (/api/chat)
-// ==========================================
-
-app.get('/api/chat/channels', async (req, res) => {
-    const search = req.query.search || '';
-    try {
-        const [channels] = await db.query(
-            'SELECT name, is_private FROM channels WHERE name LIKE ?',
-            [`%${search}%`]
-        );
-        const [users] = await db.query(
-            'SELECT username FROM users WHERE username LIKE ? LIMIT 10',
-            [`%${search}%`]
-        );
-        res.json({ channels, users });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
-
-app.post('/api/chat/channels', authenticateToken, async (req, res) => {
-    const { name, isPrivate, passcode } = req.body;
-    try {
-        const [existing] = await db.query('SELECT id FROM channels WHERE name = ?', [name]);
-        if (existing.length > 0) return res.status(400).json({ error: 'Canale già esistente.' });
-
-        await db.query(
-            'INSERT INTO channels (name, is_private, passcode) VALUES (?, ?, ?)',
-            [name.toLowerCase().trim(), isPrivate ? 1 : 0, passcode || null]
-        );
-        res.json({ ok: true });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
-
-app.post('/api/chat/verify-passcode', async (req, res) => {
-    const { channel, passcode } = req.body;
-    try {
-        const [rows] = await db.query('SELECT passcode, is_private FROM channels WHERE name = ?', [channel]);
-        if (rows.length === 0 || !rows[0].is_private) return res.json({ ok: true });
-        
-        if (rows[0].passcode === passcode) {
-            res.json({ ok: true });
-        } else {
-            res.status(403).json({ error: 'Codice di accesso errato.' });
-        }
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
-
-app.get('/api/chat/:channel', async (req, res) => {
-    try {
-        const [messages] = await db.query(
-            'SELECT m.*, u.username as sender FROM chat_messages m LEFT JOIN users u ON m.user_id = u.id WHERE m.channel = ? ORDER BY m.created_at ASC',
-            [req.params.channel]
-        );
-        res.json(messages);
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
-
-app.post('/api/chat', authenticateToken, async (req, res) => {
-    const { channel, text } = req.body;
-    try {
-        const nowMs = Date.now();
-        await db.query(
-            'INSERT INTO chat_messages (user_id, channel, text, created_at) VALUES (?, ?, ?, ?)',
-            [req.user.id, channel || 'general', text, nowMs]
-        );
-        res.json({ ok: true });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
-
-// ==========================================
-// 4. DIRECTORY SVILUPPATORI (/api/accounts)
+// 2. DIRECTORY SVILUPPATORI (/api/accounts)
 // ==========================================
 
 app.get('/api/accounts', async (req, res) => {

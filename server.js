@@ -22,7 +22,7 @@ const dbConfig = process.env.DATABASE_URL
         host: process.env.MYSQL_HOST || 'altaria.proxy.rlwy.net',
         user: process.env.MYSQL_USER || 'root',
         password: process.env.MYSQL_PASSWORD || 'IGLzxPzWHWEriHnJfSEmeICxmZlBgXaH',
-        database: process.env.MYSQL_DATABASE || 'railway',
+        database: process.env.MYSQL_DATABASE || 'railway', // DB corretto per l'interfaccia Railway
         port: process.env.MYSQL_PORT || 50825
     };
 
@@ -98,7 +98,6 @@ app.post('/api/auth/login', async (req, res) => {
         const validPassword = await bcrypt.compare(password, user.password);
         if (!validPassword) return res.status(401).json({ error: 'Credenziali non valide.' });
 
-        // Mantiene il ruolo reale salvato su DB (dev, client, o admin)
         const token = jwt.sign(
             { id: user.id, username: user.username, role: user.role, customId: user.user_custom_id },
             JWT_SECRET,
@@ -267,6 +266,18 @@ app.get('/api/accounts', async (req, res) => {
 // ==========================================
 // 5. AZIONI RISERVATE ALL'ADMIN (/api/admin)
 // ==========================================
+
+// Statistiche Dashboard
+app.get('/api/admin/stats', authenticateToken, requireAdmin, async (req, res) => {
+    try {
+        const [[{ usersCount }]] = await db.query('SELECT COUNT(*) as usersCount FROM users');
+        const [[{ postsCount }]] = await db.query('SELECT COUNT(*) as postsCount FROM posts');
+        const [[{ messagesCount }]] = await db.query('SELECT COUNT(*) as messagesCount FROM chat_messages');
+        res.json({ usersCount, postsCount, messagesCount });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
 
 // Eliminazione di un utente
 app.delete('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, res) => {

@@ -37,7 +37,7 @@ const JWT_SECRET = process.env.JWT_SECRET || 'super-secret-jwt-key-prodevunity-2
 
 // 1. REGISTRAZIONE UTENTE
 app.post('/api/auth/register', async (req, res) => {
-    const { username, password, role } = req.body;
+    const { username, email, password, role } = req.body;
     try {
         if (!username || !password) {
             return res.status(400).json({ error: 'Username e password sono obbligatori.' });
@@ -50,13 +50,12 @@ app.post('/api/auth/register', async (req, res) => {
 
         const hashedPassword = await bcrypt.hash(password, 10);
         const userRole = role === 'client' ? 'client' : 'dev';
-        
-        // Genera un ID univoco personalizzato per il campo user_custom_id
         const customId = (userRole === 'client' ? 'client_' : 'dev_') + Math.random().toString(36).substring(2, 9);
 
+        // Inserimento con 'email' e 'user_custom_id' inclusi
         await db.query(
-            'INSERT INTO users (username, password, role, user_custom_id, bio) VALUES (?, ?, ?, ?, ?)',
-            [username, hashedPassword, userRole, customId, 'Sviluppatore su ProDevUnity']
+            'INSERT INTO users (username, email, password, role, user_custom_id, bio) VALUES (?, ?, ?, ?, ?, ?)',
+            [username, email || '', hashedPassword, userRole, customId, 'Sviluppatore su ProDevUnity']
         );
 
         res.status(201).json({ ok: true, message: 'Registrazione completata.' });

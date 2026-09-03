@@ -22,7 +22,7 @@ const dbConfig = process.env.DATABASE_URL
         host: process.env.MYSQL_HOST || 'altaria.proxy.rlwy.net',
         user: process.env.MYSQL_USER || 'root',
         password: process.env.MYSQL_PASSWORD || 'IGLzxPzWHWEriHnJfSEmeICxmZlBgXaH',
-        database: process.env.MYSQL_DATABASE || 'prodevunity',
+        database: process.env.MYSQL_DATABASE || 'railway',
         port: process.env.MYSQL_PORT || 50825
     };
 

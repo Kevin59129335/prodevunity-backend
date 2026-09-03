@@ -4,7 +4,7 @@ const cookieParser = require('cookie-parser');
 const mysql = require('mysql2/promise');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY || 'sk_test_chiave_di_riserva_temporanea');
+const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY || 'sk_test_fallback_key');
 
 const app = express();
 const PORT = process.env.PORT || 10000;
@@ -37,18 +37,18 @@ const db = mysql.createPool({
 const JWT_SECRET = process.env.JWT_SECRET || 'super-secret-jwt-key-prodevunity-2026';
 
 // ==========================================
-// MIDDLEWARES AUTENTICAZIONE & ADMIN
+// AUTHENTICATION & ADMIN MIDDLEWARES
 // ==========================================
 
 async function authenticateToken(req, res, next) {
     const token = req.cookies.token;
-    if (!token) return res.status(401).json({ error: 'Non autorizzato' });
+    if (!token) return res.status(401).json({ error: 'Unauthorized' });
     try {
         const decoded = jwt.verify(token, JWT_SECRET);
         req.user = decoded;
         next();
     } catch (err) {
-        return res.status(401).json({ error: 'Token non valido' });
+        return res.status(401).json({ error: 'Invalid token' });
     }
 }
 
@@ -56,21 +56,21 @@ function requireAdmin(req, res, next) {
     if (req.user && req.user.role === 'admin') {
         next();
     } else {
-        res.status(403).json({ error: 'Accesso negato: privilegi Admin richiesti.' });
+        res.status(403).json({ error: 'Access denied: Admin privileges required.' });
     }
 }
 
 // ==========================================
-// 1. AUTENTICAZIONE (/api/auth)
+// 1. AUTHENTICATION (/api/auth)
 // ==========================================
 
 app.post('/api/auth/register', async (req, res) => {
     const { username, password, role } = req.body;
     try {
-        if (!username || !password) return res.status(400).json({ error: 'Username e password obbligatori.' });
+        if (!username || !password) return res.status(400).json({ error: 'Username and password required.' });
 
         const [existing] = await db.query('SELECT id FROM users WHERE username = ?', [username]);
-        if (existing.length > 0) return res.status(400).json({ error: 'Username già registrato.' });
+        if (existing.length > 0) return res.status(400).json({ error: 'Username already registered.' });
 
         const hashedPassword = await bcrypt.hash(password, 10);
         const userRole = role === 'client' ? 'client' : 'dev';
@@ -79,12 +79,12 @@ app.post('/api/auth/register', async (req, res) => {
 
         await db.query(
             'INSERT INTO users (username, password, role, user_custom_id, bio, created_at) VALUES (?, ?, ?, ?, ?, ?)',
-            [username, hashedPassword, userRole, customId, 'Sviluppatore su ProDevUnity', nowMs]
+            [username, hashedPassword, userRole, customId, 'Developer on ProDevUnity', nowMs]
         );
 
-        res.status(201).json({ ok: true, message: 'Registrazione completata.' });
+        res.status(201).json({ ok: true, message: 'Registration complete.' });
     } catch (err) {
-        res.status(500).json({ error: 'Errore DB: ' + err.message });
+        res.status(500).json({ error: 'Database error: ' + err.message });
     }
 });
 
@@ -92,11 +92,11 @@ app.post('/api/auth/login', async (req, res) => {
     const { username, password } = req.body;
     try {
         const [rows] = await db.query('SELECT * FROM users WHERE username = ?', [username]);
-        if (rows.length === 0) return res.status(401).json({ error: 'Credenziali non valide.' });
+        if (rows.length === 0) return res.status(401).json({ error: 'Invalid credentials.' });
 
         const user = rows[0];
         const validPassword = await bcrypt.compare(password, user.password);
-        if (!validPassword) return res.status(401).json({ error: 'Credenziali non valide.' });
+        if (!validPassword) return res.status(401).json({ error: 'Invalid credentials.' });
 
         const token = jwt.sign(
             { id: user.id, username: user.username, role: user.role, customId: user.user_custom_id },
@@ -116,22 +116,22 @@ app.post('/api/auth/login', async (req, res) => {
             user: { id: user.id, username: user.username, role: user.role, customId: user.user_custom_id, bio: user.bio || '' }
         });
     } catch (err) {
-        res.status(500).json({ error: 'Errore DB: ' + err.message });
+        res.status(500).json({ error: 'Database error: ' + err.message });
     }
 });
 
 app.get('/api/auth/me', async (req, res) => {
     const token = req.cookies.token;
-    if (!token) return res.status(401).json({ error: 'Nessuna sessione attiva.' });
+    if (!token) return res.status(401).json({ error: 'No active session.' });
 
     try {
         const decoded = jwt.verify(token, JWT_SECRET);
         const [rows] = await db.query('SELECT id, username, role, user_custom_id, bio FROM users WHERE id = ?', [decoded.id]);
-        if (rows.length === 0) return res.status(401).json({ error: 'Utente non trovato.' });
+        if (rows.length === 0) return res.status(401).json({ error: 'User not found.' });
 
         res.json({ ok: true, user: rows[0] });
     } catch (err) {
-        res.status(401).json({ error: 'Sessione non valida.' });
+        res.status(401).json({ error: 'Invalid session.' });
     }
 });
 
@@ -170,7 +170,7 @@ app.post('/api/posts', authenticateToken, async (req, res) => {
 });
 
 // ==========================================
-// 3. CANALI & CHAT (/api/chat)
+// 3. CHANNELS & CHAT (/api/chat)
 // ==========================================
 
 app.get('/api/chat/channels', async (req, res) => {
@@ -188,7 +188,7 @@ app.post('/api/chat/channels', authenticateToken, async (req, res) => {
     const { name, isPrivate, passcode } = req.body;
     try {
         const [existing] = await db.query('SELECT id FROM channels WHERE name = ?', [name]);
-        if (existing.length > 0) return res.status(400).json({ error: 'Canale già esistente.' });
+        if (existing.length > 0) return res.status(400).json({ error: 'Channel already exists.' });
 
         await db.query('INSERT INTO channels (name, is_private, passcode) VALUES (?, ?, ?)', [name.toLowerCase().trim(), isPrivate ? 1 : 0, passcode || null]);
         res.json({ ok: true });
@@ -206,7 +206,7 @@ app.post('/api/chat/verify-passcode', async (req, res) => {
         if (rows[0].passcode === passcode) {
             res.json({ ok: true });
         } else {
-            res.status(403).json({ error: 'Codice errato.' });
+            res.status(403).json({ error: 'Incorrect passcode.' });
         }
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -237,7 +237,7 @@ app.post('/api/chat', authenticateToken, async (req, res) => {
 });
 
 // ==========================================
-// 4. DIRECTORY SVILUPPATORI (/api/accounts)
+// 4. DEVELOPER DIRECTORY (/api/accounts)
 // ==========================================
 
 app.get('/api/accounts', async (req, res) => {
@@ -250,7 +250,7 @@ app.get('/api/accounts', async (req, res) => {
 });
 
 // ==========================================
-// 5. AZIONI RISERVATE ALL'ADMIN (/api/admin)
+// 5. ADMIN ACTIONS (/api/admin)
 // ==========================================
 
 app.get('/api/admin/stats', authenticateToken, requireAdmin, async (req, res) => {
@@ -267,7 +267,7 @@ app.get('/api/admin/stats', authenticateToken, requireAdmin, async (req, res) =>
 app.delete('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, res) => {
     try {
         await db.query('DELETE FROM users WHERE id = ?', [req.params.id]);
-        res.json({ ok: true, message: 'Utente eliminato.' });
+        res.json({ ok: true, message: 'User deleted.' });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
@@ -276,14 +276,14 @@ app.delete('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, 
 app.delete('/api/admin/posts/:id', authenticateToken, requireAdmin, async (req, res) => {
     try {
         await db.query('DELETE FROM posts WHERE id = ?', [req.params.id]);
-        res.json({ ok: true, message: 'Post eliminato.' });
+        res.json({ ok: true, message: 'Post deleted.' });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
 });
 
 // ==========================================
-// 6. PAGAMENTI STRIPE (/api/payments)
+// 6. STRIPE PAYMENTS (/api/payments)
 // ==========================================
 
 app.post('/api/payments/connect-developer', authenticateToken, async (req, res) => {
@@ -314,22 +314,21 @@ app.post('/api/payments/create-checkout-session', authenticateToken, async (req,
     const { amountEuro, devId, jobTitle } = req.body;
 
     try {
-        // CORREZIONE: Ora cerca tramite ID classico invece che custom_id
         const [rows] = await db.query('SELECT stripe_account_id FROM users WHERE id = ?', [devId]);
         if (rows.length === 0 || !rows[0].stripe_account_id) {
-            return res.status(400).json({ error: "Lo sviluppatore non ha ancora collegato un conto Stripe." });
+            return res.status(400).json({ error: "The developer has not connected a Stripe account yet." });
         }
 
         const devStripeAccountId = rows[0].stripe_account_id;
         const totalAmountCents = Math.round(amountEuro * 100);
-        const platformFeeCents = Math.round(totalAmountCents * 0.15); // Commissione 15%
+        const platformFeeCents = Math.round(totalAmountCents * 0.15); // 15% Platform fee
 
         const session = await stripe.checkout.sessions.create({
             payment_method_types: ['card'],
             line_items: [{
                 price_data: {
                     currency: 'eur',
-                    product_data: { name: `Incarico: ${jobTitle}` },
+                    product_data: { name: `Job Assignment: ${jobTitle}` },
                     unit_amount: totalAmountCents,
                 },
                 quantity: 1,
@@ -349,4 +348,4 @@ app.post('/api/payments/create-checkout-session', authenticateToken, async (req,
     }
 });
 
-app.listen(PORT, () => console.log(`Server attivo sulla porta ${PORT}`));
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));

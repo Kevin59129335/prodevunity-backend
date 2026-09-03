@@ -4,6 +4,7 @@ const cookieParser = require('cookie-parser');
 const mysql = require('mysql2/promise');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY || 'sk_test_chiave_di_riserva_temporanea');
 
 const app = express();
 const PORT = process.env.PORT || 10000;
@@ -22,7 +23,7 @@ const dbConfig = process.env.DATABASE_URL
         host: process.env.MYSQL_HOST || 'altaria.proxy.rlwy.net',
         user: process.env.MYSQL_USER || 'root',
         password: process.env.MYSQL_PASSWORD || 'IGLzxPzWHWEriHnJfSEmeICxmZlBgXaH',
-        database: process.env.MYSQL_DATABASE || 'railway', // DB corretto per l'interfaccia Railway
+        database: process.env.MYSQL_DATABASE || 'railway', // DB per l'interfaccia Railway
         port: process.env.MYSQL_PORT || 50825
     };
 
@@ -83,7 +84,6 @@ app.post('/api/auth/register', async (req, res) => {
 
         res.status(201).json({ ok: true, message: 'Registrazione completata.' });
     } catch (err) {
-        console.error("Errore registrazione DB:", err);
         res.status(500).json({ error: 'Errore DB: ' + err.message });
     }
 });
@@ -151,7 +151,7 @@ app.get('/api/posts', async (req, res) => {
         );
         res.json(posts);
     } catch (err) {
-        res.status(500).json({ error: 'Errore nel recupero dei post: ' + err.message });
+        res.status(500).json({ error: err.message });
     }
 });
 
@@ -165,7 +165,7 @@ app.post('/api/posts', authenticateToken, async (req, res) => {
         );
         res.json({ ok: true });
     } catch (err) {
-        res.status(500).json({ error: 'Impossibile pubblicare il post: ' + err.message });
+        res.status(500).json({ error: err.message });
     }
 });
 
@@ -176,14 +176,8 @@ app.post('/api/posts', authenticateToken, async (req, res) => {
 app.get('/api/chat/channels', async (req, res) => {
     const search = req.query.search || '';
     try {
-        const [channels] = await db.query(
-            'SELECT name, is_private FROM channels WHERE name LIKE ?',
-            [`%${search}%`]
-        );
-        const [users] = await db.query(
-            'SELECT username FROM users WHERE username LIKE ? LIMIT 10',
-            [`%${search}%`]
-        );
+        const [channels] = await db.query('SELECT name, is_private FROM channels WHERE name LIKE ?', [`%${search}%`]);
+        const [users] = await db.query('SELECT username FROM users WHERE username LIKE ? LIMIT 10', [`%${search}%`]);
         res.json({ channels, users });
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -196,10 +190,7 @@ app.post('/api/chat/channels', authenticateToken, async (req, res) => {
         const [existing] = await db.query('SELECT id FROM channels WHERE name = ?', [name]);
         if (existing.length > 0) return res.status(400).json({ error: 'Canale già esistente.' });
 
-        await db.query(
-            'INSERT INTO channels (name, is_private, passcode) VALUES (?, ?, ?)',
-            [name.toLowerCase().trim(), isPrivate ? 1 : 0, passcode || null]
-        );
+        await db.query('INSERT INTO channels (name, is_private, passcode) VALUES (?, ?, ?)', [name.toLowerCase().trim(), isPrivate ? 1 : 0, passcode || null]);
         res.json({ ok: true });
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -215,7 +206,7 @@ app.post('/api/chat/verify-passcode', async (req, res) => {
         if (rows[0].passcode === passcode) {
             res.json({ ok: true });
         } else {
-            res.status(403).json({ error: 'Codice di accesso errato.' });
+            res.status(403).json({ error: 'Codice errato.' });
         }
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -238,10 +229,7 @@ app.post('/api/chat', authenticateToken, async (req, res) => {
     const { channel, text } = req.body;
     try {
         const nowMs = Date.now();
-        await db.query(
-            'INSERT INTO chat_messages (user_id, channel, text, created_at) VALUES (?, ?, ?, ?)',
-            [req.user.id, channel || 'general', text, nowMs]
-        );
+        await db.query('INSERT INTO chat_messages (user_id, channel, text, created_at) VALUES (?, ?, ?, ?)', [req.user.id, channel || 'general', text, nowMs]);
         res.json({ ok: true });
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -254,12 +242,10 @@ app.post('/api/chat', authenticateToken, async (req, res) => {
 
 app.get('/api/accounts', async (req, res) => {
     try {
-        const [users] = await db.query(
-            'SELECT id, username, role, bio, created_at FROM users ORDER BY id DESC'
-        );
+        const [users] = await db.query('SELECT id, username, role, bio, created_at FROM users ORDER BY id DESC');
         res.json(users);
     } catch (err) {
-        res.status(500).json({ error: 'Errore nel recupero sviluppatori: ' + err.message });
+        res.status(500).json({ error: err.message });
     }
 });
 
@@ -267,7 +253,6 @@ app.get('/api/accounts', async (req, res) => {
 // 5. AZIONI RISERVATE ALL'ADMIN (/api/admin)
 // ==========================================
 
-// Statistiche Dashboard
 app.get('/api/admin/stats', authenticateToken, requireAdmin, async (req, res) => {
     try {
         const [[{ usersCount }]] = await db.query('SELECT COUNT(*) as usersCount FROM users');
@@ -279,7 +264,6 @@ app.get('/api/admin/stats', authenticateToken, requireAdmin, async (req, res) =>
     }
 });
 
-// Eliminazione di un utente
 app.delete('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, res) => {
     try {
         await db.query('DELETE FROM users WHERE id = ?', [req.params.id]);
@@ -289,11 +273,77 @@ app.delete('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, 
     }
 });
 
-// Eliminazione di un post
 app.delete('/api/admin/posts/:id', authenticateToken, requireAdmin, async (req, res) => {
     try {
         await db.query('DELETE FROM posts WHERE id = ?', [req.params.id]);
         res.json({ ok: true, message: 'Post eliminato.' });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ==========================================
+// 6. PAGAMENTI STRIPE (/api/payments)
+// ==========================================
+
+app.post('/api/payments/connect-developer', authenticateToken, async (req, res) => {
+    try {
+        // Cerca l'ID Stripe dell'utente loggato nel database
+        const [rows] = await db.query('SELECT stripe_account_id FROM users WHERE id = ?', [req.user.id]);
+        let accountId = rows.length > 0 ? rows[0].stripe_account_id : null;
+
+        if (!accountId) {
+            const account = await stripe.accounts.create({ type: 'express' });
+            accountId = account.id;
+            await db.query('UPDATE users SET stripe_account_id = ? WHERE id = ?', [accountId, req.user.id]);
+        }
+
+        const accountLink = await stripe.accountLinks.create({
+            account: accountId,
+            refresh_url: `${process.env.FRONTEND_URL || 'https://prodevunity.netlify.app'}/jobs.html`,
+            return_url: `${process.env.FRONTEND_URL || 'https://prodevunity.netlify.app'}/jobs.html?stripe=success`,
+            type: 'account_onboarding',
+        });
+
+        res.json({ url: accountLink.url });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.post('/api/payments/create-checkout-session', authenticateToken, async (req, res) => {
+    const { amountEuro, devCustomId, jobTitle } = req.body;
+
+    try {
+        const [rows] = await db.query('SELECT stripe_account_id FROM users WHERE user_custom_id = ?', [devCustomId]);
+        if (rows.length === 0 || !rows[0].stripe_account_id) {
+            return res.status(400).json({ error: "Lo sviluppatore non ha ancora collegato un conto Stripe." });
+        }
+
+        const devStripeAccountId = rows[0].stripe_account_id;
+        const totalAmountCents = Math.round(amountEuro * 100);
+        const platformFeeCents = Math.round(totalAmountCents * 0.15); // Commissione 15%
+
+        const session = await stripe.checkout.sessions.create({
+            payment_method_types: ['card'],
+            line_items: [{
+                price_data: {
+                    currency: 'eur',
+                    product_data: { name: `Incarico: ${jobTitle}` },
+                    unit_amount: totalAmountCents,
+                },
+                quantity: 1,
+            }],
+            mode: 'payment',
+            payment_intent_data: {
+                application_fee_amount: platformFeeCents, 
+                transfer_data: { destination: devStripeAccountId }, 
+            },
+            success_url: `${process.env.FRONTEND_URL || 'https://prodevunity.netlify.app'}/jobs.html?payment=success`,
+            cancel_url: `${process.env.FRONTEND_URL || 'https://prodevunity.netlify.app'}/jobs.html?payment=cancelled`,
+        });
+
+        res.json({ url: session.url });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }

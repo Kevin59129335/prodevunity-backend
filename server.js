@@ -35,7 +35,10 @@ const db = mysql.createPool({
 
 const JWT_SECRET = process.env.JWT_SECRET || 'super-secret-jwt-key-prodevunity-2026';
 
-// Middleware Autenticazione
+// ==========================================
+// MIDDLEWARES AUTENTICAZIONE & ADMIN
+// ==========================================
+
 async function authenticateToken(req, res, next) {
     const token = req.cookies.token;
     if (!token) return res.status(401).json({ error: 'Non autorizzato' });
@@ -45,6 +48,14 @@ async function authenticateToken(req, res, next) {
         next();
     } catch (err) {
         return res.status(401).json({ error: 'Token non valido' });
+    }
+}
+
+function requireAdmin(req, res, next) {
+    if (req.user && req.user.role === 'admin') {
+        next();
+    } else {
+        res.status(403).json({ error: 'Accesso negato: privilegi Admin richiesti.' });
     }
 }
 
@@ -87,6 +98,7 @@ app.post('/api/auth/login', async (req, res) => {
         const validPassword = await bcrypt.compare(password, user.password);
         if (!validPassword) return res.status(401).json({ error: 'Credenziali non valide.' });
 
+        // Mantiene il ruolo reale salvato su DB (dev, client, o admin)
         const token = jwt.sign(
             { id: user.id, username: user.username, role: user.role, customId: user.user_custom_id },
             JWT_SECRET,
@@ -244,11 +256,35 @@ app.post('/api/chat', authenticateToken, async (req, res) => {
 app.get('/api/accounts', async (req, res) => {
     try {
         const [users] = await db.query(
-            'SELECT username, role, bio, created_at FROM users ORDER BY id DESC'
+            'SELECT id, username, role, bio, created_at FROM users ORDER BY id DESC'
         );
         res.json(users);
     } catch (err) {
         res.status(500).json({ error: 'Errore nel recupero sviluppatori: ' + err.message });
+    }
+});
+
+// ==========================================
+// 5. AZIONI RISERVATE ALL'ADMIN (/api/admin)
+// ==========================================
+
+// Eliminazione di un utente
+app.delete('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, res) => {
+    try {
+        await db.query('DELETE FROM users WHERE id = ?', [req.params.id]);
+        res.json({ ok: true, message: 'Utente eliminato.' });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Eliminazione di un post
+app.delete('/api/admin/posts/:id', authenticateToken, requireAdmin, async (req, res) => {
+    try {
+        await db.query('DELETE FROM posts WHERE id = ?', [req.params.id]);
+        res.json({ ok: true, message: 'Post eliminato.' });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
     }
 });
 

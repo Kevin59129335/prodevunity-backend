@@ -273,26 +273,13 @@ app.post('/api/payments/connect-developer', authenticateToken, async (req, res) 
         let accountId = rows.length > 0 ? rows[0].stripe_account_id : null;
         
         if (!accountId) {
-            let account;
-            try {
-                // Primary creation method (Express Account)
-                account = await stripe.accounts.create({
-                    type: 'express',
-                    capabilities: {
-                        card_payments: { requested: true },
-                        transfers: { requested: true },
-                    },
-                });
-            } catch (v1Err) {
-                // Fallback for new Stripe Connect accounts (Controller syntax)
-                account = await stripe.accounts.create({
-                    controller: {
-                        stripe_dashboard: { type: 'express' },
-                        fees: { payer: 'application' },
-                        losses: { payments: 'application' }
-                    }
-                });
-            }
+            const account = await stripe.accounts.create({
+                type: 'express',
+                capabilities: {
+                    card_payments: { requested: true },
+                    transfers: { requested: true },
+                },
+            });
             accountId = account.id;
             await db.query('UPDATE users SET stripe_account_id = ? WHERE id = ?', [accountId, req.user.id]);
         }

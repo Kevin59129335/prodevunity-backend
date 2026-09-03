@@ -1,29 +1,27 @@
 <!DOCTYPE html>
-<html lang="en" class="dark">
+<html lang="it">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ProDevUnity — 404 Page Not Found</title>
+    <title>ProDevUnity - Pagina non trovata (404)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="style.css">
 </head>
 <body class="min-h-screen flex flex-col relative pb-10">
-
-    <header class="sticky top-0 z-40 px-8 py-4 flex items-center justify-between border-b border-[#262a35] bg-[#0f1115]">
-        <a href="index.html" class="flex items-center space-x-3">
-            <div class="w-9 h-9 rounded-lg bg-[#161920] border border-[#262a35] flex items-center justify-center text-blue-400 font-bold text-base">
-                <i class="fa-solid fa-code text-sm"></i>
+    
+    <header class="sticky top-0 z-40 px-8 py-4 flex items-center justify-between border-b">
+        <a href="feed.html" class="flex items-center space-x-3">
+            <div class="w-8 h-8 rounded-lg bg-blue-600/20 border border-blue-500/30 flex items-center justify-center text-blue-400 font-bold text-sm">
+                <i class="fa-solid fa-code"></i>
             </div>
-            <span class="text-lg font-bold tracking-tight text-white">ProDev<span class="text-blue-400">Unity</span></span>
+            <span class="text-base font-bold tracking-tight">ProDev<span class="text-blue-400">Unity</span></span>
         </a>
-
         <div class="flex items-center space-x-4">
-            <span id="user-display" class="text-xs font-medium text-slate-400 bg-[#161920] px-3 py-1.5 rounded-lg border border-[#262a35]">
-                User: <strong id="current-username-display" class="text-blue-400">@guest</strong>
-            </span>
-            <button onclick="logout()" id="logout-btn" class="hidden text-xs bg-[#161920] hover:bg-[#222733] text-slate-300 border border-[#262a35] px-3.5 py-1.5 rounded-lg transition">Logout</button>
-            <button onclick="openAuthModal()" id="login-btn" class="flat-btn-primary text-xs px-4 py-2 rounded-lg transition">Access Platform</button>
+            <button onclick="toggleTheme()" class="p-2 rounded-lg border border-slate-700/50 hover:bg-slate-800/20 transition text-xs flex items-center space-x-1.5" title="Cambia Tema">
+                <i class="fa-solid fa-sun text-amber-400"></i>
+                <i class="fa-solid fa-moon text-blue-400"></i>
+            </button>
         </div>
     </header>
 
@@ -32,37 +30,30 @@
             <div class="w-16 h-16 rounded-full bg-[#1e2335] border border-slate-700/50 flex items-center justify-center text-blue-400 text-2xl mx-auto">
                 <i class="fa-solid fa-terminal"></i>
             </div>
-            
             <div class="space-y-2">
                 <span class="text-xs font-mono px-2.5 py-1 rounded bg-[#0f1115] border border-[#262a35] text-amber-500">
                     ERROR 404: PAGE_NOT_FOUND
                 </span>
-                <h1 class="text-2xl font-bold text-white tracking-tight pt-2">This page does not exist</h1>
+                <h1 class="text-2xl font-bold tracking-tight pt-2">Questa pagina non esiste</h1>
                 <p class="text-xs text-slate-400 leading-relaxed max-w-sm mx-auto">
-                    The requested URL was not found on this server or has been removed.
+                    L'URL richiesto non è stato trovato sul server o è stato rimosso.
                 </p>
             </div>
-
             <div class="pt-2 flex items-center justify-center space-x-3">
-                <a href="index.html" class="flat-btn-primary px-5 py-2.5 text-xs font-semibold inline-flex items-center space-x-2">
+                <a href="feed.html" class="flat-btn-primary px-5 py-2.5 text-xs font-semibold inline-flex items-center space-x-2">
                     <i class="fa-solid fa-house"></i>
-                    <span>Back to Home</span>
-                </a>
-                <a href="feed.html" class="bg-[#0f1115] hover:bg-[#1e2335] border border-[#262a35] text-white font-semibold px-5 py-2.5 rounded-lg text-xs transition inline-flex items-center space-x-2">
-                    <i class="fa-solid fa-fire text-amber-500"></i>
-                    <span>Go to Feed</span>
+                    <span>Torna al Feed</span>
                 </a>
             </div>
         </div>
     </main>
 
-    <div id="main-dock" class="fixed left-4 top-1/2 -translate-y-1/2 z-50">
-        <div class="flat-dock-container flex flex-col items-center gap-2">
-            <a href="index.html" class="dock-item" title="Home"><i class="fa-solid fa-house text-base"></i></a>
-            <a href="feed.html" class="dock-item" title="Feed"><i class="fa-solid fa-fire text-base"></i></a>
-            <a href="jobs.html" class="dock-item" title="Jobs"><i class="fa-solid fa-briefcase text-base"></i></a>
-            <a href="directory.html" class="dock-item" title="Featured"><i class="fa-solid fa-crown text-base"></i></a>
-            <a href="chat.html" class="dock-item" title="Chat"><i class="fa-solid fa-comments text-base"></i></a>
+    <!-- BANNER COOKIE GDPR -->
+    <div id="cookie-banner" class="hidden fixed bottom-4 right-4 max-w-xs bg-[#131722] border border-[#262a35] p-4 rounded-xl shadow-xl z-50 text-xs space-y-3">
+        <p class="text-slate-300">Utilizziamo cookie tecnici per mantenere attiva la tua sessione in modo sicuro.</p>
+        <div class="flex space-x-2">
+            <button onclick="acceptCookies()" class="flat-btn-primary px-3 py-1 rounded font-semibold text-[11px]">Accetta</button>
+            <a href="terms.html" class="text-slate-400 hover:text-white px-2 py-1 text-[11px]">Info</a>
         </div>
     </div>
 

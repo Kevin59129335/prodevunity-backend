@@ -23,7 +23,7 @@ const dbConfig = process.env.DATABASE_URL
         host: process.env.MYSQL_HOST || 'altaria.proxy.rlwy.net',
         user: process.env.MYSQL_USER || 'root',
         password: process.env.MYSQL_PASSWORD || 'IGLzxPzWHWEriHnJfSEmeICxmZlBgXaH',
-        database: process.env.MYSQL_DATABASE || 'railway', // DB per l'interfaccia Railway
+        database: process.env.MYSQL_DATABASE || 'railway', 
         port: process.env.MYSQL_PORT || 50825
     };
 
@@ -288,7 +288,6 @@ app.delete('/api/admin/posts/:id', authenticateToken, requireAdmin, async (req, 
 
 app.post('/api/payments/connect-developer', authenticateToken, async (req, res) => {
     try {
-        // Cerca l'ID Stripe dell'utente loggato nel database
         const [rows] = await db.query('SELECT stripe_account_id FROM users WHERE id = ?', [req.user.id]);
         let accountId = rows.length > 0 ? rows[0].stripe_account_id : null;
 
@@ -312,10 +311,11 @@ app.post('/api/payments/connect-developer', authenticateToken, async (req, res) 
 });
 
 app.post('/api/payments/create-checkout-session', authenticateToken, async (req, res) => {
-    const { amountEuro, devCustomId, jobTitle } = req.body;
+    const { amountEuro, devId, jobTitle } = req.body;
 
     try {
-        const [rows] = await db.query('SELECT stripe_account_id FROM users WHERE user_custom_id = ?', [devCustomId]);
+        // CORREZIONE: Ora cerca tramite ID classico invece che custom_id
+        const [rows] = await db.query('SELECT stripe_account_id FROM users WHERE id = ?', [devId]);
         if (rows.length === 0 || !rows[0].stripe_account_id) {
             return res.status(400).json({ error: "Lo sviluppatore non ha ancora collegato un conto Stripe." });
         }

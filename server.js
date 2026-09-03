@@ -35,7 +35,7 @@ const db = mysql.createPool({
 
 const JWT_SECRET = process.env.JWT_SECRET || 'super-secret-jwt-key-prodevunity-2026';
 
-// 1. REGISTRAZIONE UTENTE (Con timestamp manuale per aggirare lo STRICT MODE)
+// 1. REGISTRAZIONE UTENTE (Timestamp numerico compatibile)
 app.post('/api/auth/register', async (req, res) => {
     const { username, email, password, role } = req.body;
     try {
@@ -51,11 +51,11 @@ app.post('/api/auth/register', async (req, res) => {
         const hashedPassword = await bcrypt.hash(password, 10);
         const userRole = role === 'client' ? 'client' : 'dev';
         const customId = (userRole === 'client' ? 'client_' : 'dev_') + Math.random().toString(36).substring(2, 9);
-        const now = new Date();
+        const nowMs = Date.now(); // Invia timestamp numerico puro (es. 1725389000000)
 
         await db.query(
             'INSERT INTO users (username, email, password, role, user_custom_id, bio, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
-            [username, email || '', hashedPassword, userRole, customId, 'Sviluppatore su ProDevUnity', now]
+            [username, email || '', hashedPassword, userRole, customId, 'Sviluppatore su ProDevUnity', nowMs]
         );
 
         res.status(201).json({ ok: true, message: 'Registrazione completata.' });
@@ -103,7 +103,7 @@ app.post('/api/auth/login', async (req, res) => {
     }
 });
 
-// 3. ME (SESSIONE)
+// 3. RECUPERO SESSIONE
 app.get('/api/auth/me', async (req, res) => {
     const token = req.cookies.token;
     if (!token) return res.status(401).json({ error: 'Nessuna sessione attiva.' });

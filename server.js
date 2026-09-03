@@ -271,20 +271,42 @@ app.post('/api/payments/connect-developer', authenticateToken, async (req, res) 
     try {
         const [rows] = await db.query('SELECT stripe_account_id FROM users WHERE id = ?', [req.user.id]);
         let accountId = rows.length > 0 ? rows[0].stripe_account_id : null;
+        
         if (!accountId) {
-            const account = await stripe.accounts.create({ type: 'express' });
+            let account;
+            try {
+                // Primary creation method (Express Account)
+                account = await stripe.accounts.create({
+                    type: 'express',
+                    capabilities: {
+                        card_payments: { requested: true },
+                        transfers: { requested: true },
+                    },
+                });
+            } catch (v1Err) {
+                // Fallback for new Stripe Connect accounts (Controller syntax)
+                account = await stripe.accounts.create({
+                    controller: {
+                        stripe_dashboard: { type: 'express' },
+                        fees: { payer: 'application' },
+                        losses: { payments: 'application' }
+                    }
+                });
+            }
             accountId = account.id;
             await db.query('UPDATE users SET stripe_account_id = ? WHERE id = ?', [accountId, req.user.id]);
         }
+        
         const accountLink = await stripe.accountLinks.create({
             account: accountId,
             refresh_url: `${process.env.FRONTEND_URL || 'https://prodevunity.netlify.app'}/jobs.html`,
             return_url: `${process.env.FRONTEND_URL || 'https://prodevunity.netlify.app'}/jobs.html?stripe=success`,
             type: 'account_onboarding',
         });
+        
         res.json({ url: accountLink.url });
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        res.status(500).json({ error: 'Stripe Connect Error: ' + err.message });
     }
 });
 
@@ -295,9 +317,11 @@ app.post('/api/payments/create-checkout-session', authenticateToken, async (req,
         if (rows.length === 0 || !rows[0].stripe_account_id) {
             return res.status(400).json({ error: "The developer has not connected a Stripe account yet." });
         }
+        
         const devStripeAccountId = rows[0].stripe_account_id;
         const totalAmountCents = Math.round(amountEuro * 100);
         const platformFeeCents = Math.round(totalAmountCents * 0.15); // 15% Platform fee
+        
         const session = await stripe.checkout.sessions.create({
             payment_method_types: ['card'],
             line_items: [{
@@ -316,17 +340,16 @@ app.post('/api/payments/create-checkout-session', authenticateToken, async (req,
             success_url: `${process.env.FRONTEND_URL || 'https://prodevunity.netlify.app'}/jobs.html?payment=success`,
             cancel_url: `${process.env.FRONTEND_URL || 'https://prodevunity.netlify.app'}/jobs.html?payment=cancelled`,
         });
+        
         res.json({ url: session.url });
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        res.status(500).json({ error: 'Stripe Checkout Error: ' + err.message });
     }
 });
 
 // ==========================================
 // 7. JOBS BOARD & APPLICATIONS (/api/jobs)
 // ==========================================
-
-// Get jobs based on role
 app.get('/api/jobs', authenticateToken, async (req, res) => {
     try {
         if (req.user.role === 'client') {
@@ -353,7 +376,6 @@ app.get('/api/jobs', authenticateToken, async (req, res) => {
     }
 });
 
-// Post a new job (Clients only)
 app.post('/api/jobs', authenticateToken, async (req, res) => {
     if (req.user.role !== 'client') return res.status(403).json({ error: 'Only clients can post jobs.' });
     const { title, budget, category, description } = req.body;
@@ -368,7 +390,6 @@ app.post('/api/jobs', authenticateToken, async (req, res) => {
     }
 });
 
-// Apply to a job (Devs only)
 app.post('/api/jobs/:id/apply', authenticateToken, async (req, res) => {
     if (req.user.role !== 'dev') return res.status(403).json({ error: 'Only developers can apply for jobs.' });
     const { proposal_text } = req.body;
@@ -386,7 +407,6 @@ app.post('/api/jobs/:id/apply', authenticateToken, async (req, res) => {
     }
 });
 
-// Get applications for a specific job (Clients only)
 app.get('/api/jobs/:id/applications', authenticateToken, async (req, res) => {
     if (req.user.role !== 'client') return res.status(403).json({ error: 'Only clients can view applications.' });
     try {
@@ -400,7 +420,6 @@ app.get('/api/jobs/:id/applications', authenticateToken, async (req, res) => {
     }
 });
 
-// Accept or Reject an application (Clients only)
 app.put('/api/applications/:id/status', authenticateToken, async (req, res) => {
     if (req.user.role !== 'client') return res.status(403).json({ error: 'Only clients can change status.' });
     const { status } = req.body;

@@ -1,15 +1,20 @@
 CREATE DATABASE IF NOT EXISTS prodevunity;
 USE prodevunity;
 
--- 1. Tabella Utenti (Supporto per RUOLO ADMIN incluso)
+-- 1. Tabella Utenti (Aggiornata con Email, Verifica e OAuth)
 CREATE TABLE IF NOT EXISTS users (
     id INT AUTO_INCREMENT PRIMARY KEY,
     username VARCHAR(50) NOT NULL UNIQUE,
-    password VARCHAR(255) NOT NULL,
+    email VARCHAR(255) NOT NULL UNIQUE,
+    password VARCHAR(255) NULL, -- Può essere NULL se l'utente si registra via OAuth Social
     role ENUM('dev', 'client', 'admin') DEFAULT 'dev',
     user_custom_id VARCHAR(20),
     bio VARCHAR(255) DEFAULT 'Developer on ProDevUnity',
     boosted_until BIGINT DEFAULT 0,
+    is_email_verified TINYINT(1) DEFAULT 0,
+    email_verification_token VARCHAR(255) NULL,
+    github_id VARCHAR(100) NULL UNIQUE,
+    google_id VARCHAR(100) NULL UNIQUE,
     created_at BIGINT NOT NULL
 );
 
@@ -30,13 +35,13 @@ CREATE TABLE IF NOT EXISTS jobs (
     client_username VARCHAR(50) NOT NULL,
     title VARCHAR(255) NOT NULL,
     budget VARCHAR(50) NOT NULL,
-    category VARCHAR(50) NOT NULL,
+    category VARCHAR(50) DEFAULT 'General',
     description TEXT NOT NULL,
     status ENUM('open', 'closed') DEFAULT 'open',
     created_at BIGINT NOT NULL
 );
 
--- 4. Tabella Candidature Lavoro (Pending, Accepted, Rejected)
+-- 4. Tabella Candidature Lavoro
 CREATE TABLE IF NOT EXISTS job_applications (
     id INT AUTO_INCREMENT PRIMARY KEY,
     job_id INT NOT NULL,
@@ -64,4 +69,19 @@ CREATE TABLE IF NOT EXISTS channels (
     password VARCHAR(255),
     creator VARCHAR(50) NOT NULL,
     created_at BIGINT NOT NULL
+);
+
+-- 7. Tabella Recensioni e Feedback Verificati
+CREATE TABLE IF NOT EXISTS reviews (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    job_id INT NOT NULL,
+    reviewer_username VARCHAR(50) NOT NULL,
+    reviewed_username VARCHAR(50) NOT NULL,
+    rating INT NOT NULL CHECK (rating >= 1 AND rating <= 5),
+    comment TEXT NOT NULL,
+    created_at BIGINT NOT NULL,
+    FOREIGN KEY (job_id) REFERENCES jobs(id) ON DELETE CASCADE,
+    FOREIGN KEY (reviewer_username) REFERENCES users(username) ON DELETE CASCADE,
+    FOREIGN KEY (reviewed_username) REFERENCES users(username) ON DELETE CASCADE,
+    UNIQUE KEY unique_job_review (job_id, reviewer_username)
 );
